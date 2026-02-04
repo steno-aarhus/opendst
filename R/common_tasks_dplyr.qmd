@@ -1,0 +1,45 @@
+---
+title: "Data processing example using dplyr"
+author: "Anders Aasted Isaksen"
+format: html
+editor: visual
+---
+
+## BEF
+
+Tasks:
+
+1.  Load in bef.
+    1.  Normally, this will be from disk: either single-year files or a combined dataset containing data of all years.
+    2.  Here we load from the synthetic dataset, which mimics the latter.
+2.  Filter to relevant years and/or individuals needed for the planned analysis.
+    1.  This is a good way to reduce the size of the data you're working with, which will speed processing times up and make your sessions more stable.
+    2.  Depending on the analysis, you can limit your dataset to the range of years and/or age used in your analyses.
+    3.  The list of pnr-numbers that you identify in this step can be used to filter all the other data sources. If your analyses are restricted to a population of individuals with a certain disease, e.g. diabetes or cardiovascular disease, it may be useful to define these variables earlier, and combine them with bef to allow you to filter the data to this study population from the start.
+3.  Convert raw codes to usable values.
+
+
+### 1: Load
+
+```{r}
+load(here::here("synthetic_dst.RData"))
+
+bef <- synthetic_dst$bef
+```
+
+
+### 2: Filter
+
+In this example, we only want adults alive and residing in Denmark between 2020 and 2024
+
+```{r}
+bef_filtered <-
+  bef |> filter(year %in% 2020:2024 & ALDER >= 18) |>
+  select(PNR, year, FOED_DAG, KOEN, CIVST, REG, OPR_LAND)
+
+# Keep the list of pnr's for later filtering:
+filtered_pnrs <- bef_filtered$PNR
+```
+
+
+### 3: Convert

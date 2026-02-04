@@ -1,0 +1,122 @@
+---
+title: "Data processing examples using data.table"
+author: "Anders Aasted Isaksen"
+format: html
+editor: visual
+---
+
+# Introduction
+
+This Quarto document uses synthetic register data to run a data processing pipeline and illustrate the most common challenges and tasks encountered when conducting register-based research.
+
+## Setup
+
+The synthetic dataset is pre-loaded into this R session as a list of tibbles and each register is loaded from there.
+
+If you're on your own in a project with only the raw data, you would first need to convert your raw SAS files to a more practical format (the `fastregs` packages can help you), and then read your data in from there. Either in the raw structure as separate files for each year (e.g. `bef202412.csv` or `.rds`), or as a dataset of `Arrow Tables` stored as `.parquet` using the `arrow` package:
+
+EXAMPLE
+
+or from a DuckDB database using `duckplyr` and/or `dbplyr`
+
+EXAMPLE
+
+A note on data processing back-ends:
+The "engine" that runs your processing can either be
+
+- R
+- DuckDB
+- Arrow
+
+With R being the slowest and most vulnerable to instability when forced to process register-scale data sizes.  DuckDB being the fastest
+
+With the latest version of `duckplyr`, you can conduct practically all of your data processing from R using the same dplyr commands as you would in regular R. Arrow supports fewer operations than DuckDB/`duckplyr`, and  
+
+```{r setup}
+
+load(here::here("synthetic_dst.RData"))
+
+```
+
+## BEF
+
+Tasks:
+
+1.  Load in bef.
+    1.  Normally, this will be from disk: either single-year files or a combined dataset containing data of all years.
+    2.  Here we load from the synthetic dataset, which mimics the latter.
+2.  Filter to relevant years and/or individuals needed for the planned analysis.
+    1.  This is a good way to reduce the size of the data you're working with, which will speed processing times up and make your sessions more stable.
+    2.  Depending on the analysis, you can limit your dataset to the range of years and/or age used in your analyses.
+    3.  The list of pnr-numbers that you identify in this step can be used to filter all the other data sources. If your analyses are restricted to a population of individuals with a certain disease, e.g. diabetes or cardiovascular disease, it may be useful to define these variables earlier, and combine them with bef to allow you to filter the data to this study population from the start.
+3.  Convert raw codes to usable values.
+
+
+### 1: Load
+
+```{r}
+
+# Normally, you would load this in with dstDataPrep::load_database("bef") or other alternatives
+bef <- synthetic_dst$bef
+
+```
+
+
+### 2: Filter
+
+In this example, we only want adults alive and residing in Denmark between 2020 and 2024
+
+```{r}
+bef_filtered <-
+  bef |> filter(year %in% 2020:2024 & ALDER >= 18) |>
+  select(PNR, year, FOED_DAG, KOEN, CIVST, REG, OPR_LAND)
+
+# Keep the list of pnr's for later filtering:
+filtered_pnrs <- bef_filtered$PNR
+```
+
+
+### 3: Convert
+
+```{r}
+bef_filtered <-
+  bef_db |> filter(year %in% 2011:2021 &
+                     PNR %in% study_pnrs) |> select(PNR, year, FOED_DAG, KOEN, CIVST, REG, OPR_LAND)
+
+bef_years <- collect(bef_filtered)
+setDT(bef_years)
+setkey(bef_years, PNR, year)
+
+bef_years_clean <- bef_years[, .(
+  PNR,
+  year,
+  do_birth = as.Date(FOED_DAG),
+  sex = factor(ifelse(KOEN == '1', 'Male', 'Female')),
+  marital_status = factor(ifelse(
+    CIVST %in% c("G", "P"),
+    "Married",
+    ifelse(
+      CIVST %in% c("F", "O", "E", "L"),
+      "Divorced or widowed",
+      ifelse(CIVST == "U", "Unmarried",
+             NA)
+    )
+  )),
+  region = factor(ifelse(
+    REG == 81,
+    "North Denmark Region",
+    ifelse(
+      REG == 82,
+      "Central Denmark Region",
+      ifelse(
+        REG == 83,
+        "South Denmark Region",
+        ifelse(REG == 84,
+               "Capital Region",
+               ifelse(REG == 85, "Zealand Region", NA))
+      )
+    )
+  )),
+  immigrant = OPR_LAND != 5100
+)]
+```
