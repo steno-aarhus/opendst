@@ -1,51 +1,30 @@
----
-title: "Synthetic DST Registers"
-author: "Anders Aasted Isaksen"
-format: html
-editor: visual
----
-
-## BEF
-
-[Full variable list](https://www.dst.dk/extranet/ForskningVariabellister/BEF%20-%20Befolkningen.html)
-
-Variables in this dataset:
-
-- [PNR](https://www.dst.dk/da/Statistik/dokumentation/Times/Forskningsservice/PNR): Personnummer
-- [KOEN](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/KOEN): Køn
-- [FOED_DAG](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/FOED-DAG): Fødselsdato
-- [REG](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/REG): Region
-- [CIVST](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/CIVST): Civilstand
-- [OPR_LAND](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/OPR-LAND): Oprindelsesland
-
-
-```{r setup}
-library(tidyverse)
-
-# Set seed for reproducibility
-set.seed(2024)
-
-```
-
-
-
-```{r bef-function}
-
-
-# Wrapper function for the entire generation process
-generate_bef <- function(years_seq = 2015:2024,
+#' Generate longitudinal synthetic bef data
+#'
+#' @param years_generated A vector of years to generate data points for.
+#' @param rows_per_year How many individual PNRs to generate data for each year.
+#' @param turnover_per_year The number of individual PNRs left out of any given year per year generated.
+#'
+#' @returns A tibble containing multiple years of a synthetic bef register (featuring a selection of commonly used variables)
+#' @export
+#'
+#' @seealso See the `vignette("register_references")` for the documentation used to create this function
+#'
+#' @examples
+#' generate_bef(
+#'   years_generated = 2015:2024,
+#'   rows_per_year = 1000,
+#'   turnover_per_year = 20
+#' )
+generate_bef <- function(years_generated = 2015:2024,
                          rows_per_year = 1000,
                          turnover_per_year = 20) {
   #  SETUP POPULATION SIZE
 
-
   # Calculate total size of the unique population pool based on inputs
-  total_background_rows <- rows_per_year + (length(years_seq) * turnover_per_year)
-
+  total_background_rows <- rows_per_year + (length(years_generated) * turnover_per_year)
 
   # GENERATE BACKGROUND POPULATION (time-stable Variables)
   # P.S. Yes, PNR and KOEN can change over time for a person changing legal sex, but that's beyond the current scope
-
 
   # Setup OPR_LAND vector
 
@@ -97,17 +76,15 @@ generate_bef <- function(years_seq = 2015:2024,
     KOEN = sample(c(1, 2), total_background_rows, replace = TRUE),
 
     # Stable Birthday
-    # Cap max birthday at start of sequence - 1 year to ensure existence
+    # Cap max birthday at start of sequence - 1 year to ensure valid ALDER in all generated years
     FOED_DAG = sample(
-      seq(as.Date("1950-01-01"), as.Date(paste0(min(years_seq) - 1, "-12-31")), by = "day"),
+      seq(as.Date("1950-01-01"), as.Date(paste0(min(years_generated) - 1, "-12-31")), by = "day"),
       total_background_rows,
       replace = TRUE
     )
   )
 
-
   # HELPER FUNCTION: YEARLY SAMPLING
-
 
   generate_year_sample <- function(curr_year, population_pool) {
     year_char <- as.character(curr_year)
@@ -137,28 +114,10 @@ generate_bef <- function(years_seq = 2015:2024,
       select(PNR, KOEN, FOED_DAG, ALDER, REG, CIVST, OPR_LAND, year)
   }
 
-
   # EXECUTE MAP & RETURN
 
-
-  result <- map(years_seq, \(y) generate_year_sample(y, background_pop)) |>
+  result <- map(years_generated, \(y) generate_year_sample(y, background_pop)) |>
     list_rbind()
 
   return(result)
 }
-
-```
-
-
-## UDDA
-
-bla bla
-
-
-```{r export-data}
-
-synthetic_dst <- list(bef = generate_bef())
-
-save(synthetic_dst, file = "synthetic_dst.RData")
-```
-

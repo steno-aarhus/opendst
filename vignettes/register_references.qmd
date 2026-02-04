@@ -1,0 +1,19 @@
+---
+title: "Documentation references for Danish registers"
+author: "Anders Aasted Isaksen"
+format: html
+editor: visual
+---
+
+## BEF
+
+[Full variable list](https://www.dst.dk/extranet/ForskningVariabellister/BEF%20-%20Befolkningen.html)
+
+Variables in synthetic dataset:
+
+-   [PNR](https://www.dst.dk/da/Statistik/dokumentation/Times/Forskningsservice/PNR): Personnummer
+-   [KOEN](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/KOEN): Køn
+-   [FOED_DAG](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/FOED-DAG): Fødselsdato
+-   [REG](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/REG): Region
+-   [CIVST](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/CIVST): Civilstand
+-   [OPR_LAND](https://www.dst.dk/da/Statistik/dokumentation/Times/Moduldata-for-Befolkning-og-valg/OPR-LAND): Oprindelsesland
