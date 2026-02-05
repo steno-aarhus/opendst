@@ -1,9 +1,85 @@
 ---
-title: "Data processing example using dplyr"
+title: "Common data processing tasks: examples using dplyr"
 author: "Anders Aasted Isaksen"
 format: html
 editor: visual
 ---
+
+# Introduction
+
+This Quarto document uses synthetic register data to run a data processing pipeline and illustrate the most common challenges and tasks encountered when conducting register-based research.
+
+## Background
+
+### Data storage formats
+
+The synthetic registers are generated during this R session, stored on disk in the `data-parquet` sub-folder using the `arrow` package, and then read in from there.
+
+If you're on your own in a project with only the raw SAS data, you would first need to convert your raw SAS files to a more practical format (the `fastregs` packages can help you), and then read your data in from there. Either in the raw structure as separate files for each year (e.g. `bef202412.csv` or `.rds`), or - much faster and more convenient - as a dataset of `Arrow Tables` stored as `.parquet` using the `arrow` package.
+
+### Processing engines
+
+When processing data in R scripts, you're using R's processing engine (sometimes referred to as the *back-end*) by default. This seems obvious, and chances are that you've never used - or needed, but we'll get back to that - any other engine before. When processing very large amounts of data, e.g. nation-wide registers, there are some advantages to using other processing engines, and clever people have created R packages that translate R and `dplyr` commands to the language (SQL queries) of their respective engines, allowing you to use some of those engines from within your R session, using standard `dplyr` syntax.
+
+In this guide, we'll use two of these engines - Arrow, accessible through the `arrow` package, and DuckDB, accessible through the `duckplyr` package - both of which are installed on the virtual machines of Statistics Denmark and can be used with standard `dplyr` syntax as if they were normal R objects.
+
+First, let's get the main pros and cons to using these external engines in R settled:
+
+- Pros: 
+   - They're much more computationally efficient, so you'll get your processing done much faster
+   - They take up less memory resources on the server, so you're less likely to crash your session or experience instability or unresponsiveness (and so are everyone else using the server at the same time as you).
+   
+- Cons:
+   - Objects created by commands interacting with these engines don't look and behave exactly as you're used to when working in R, so you will need to get to know them.
+   - They don't support **all** of R's functionality. Their main purpose is to facilitate data cleaning (e.g. row filtering, variable selection/creation, table joins) and relatively simple analytics (e.g. sorting, calculate means etc.). You will still be doing your regressions in R.
+
+### Getting started with Arrow/`arrow` and DuckDB/`duckplyr`
+
+Remember: The goal of using `arrow` or `duckplyr` is to use their engines to read and wrangle the massive raw datasets that make up most registers. At some point - after a lot of filtering, selection, joining etc. - this data will be cleaned to the variables you actually use in your analyses, which will fit in a size that R can handle without breaking a sweat, e.g. a handful of tables consisting of million of rows. At this point, there is no longer much advantage to using either back-end over R's engine, and you can safely use R's engine to execute your custom functions or other operations not support by the other back-ends. You may find yourself needing to use functions that aren't supported by `arrow` or `duckplyr` earlier in your pipeline, and that's fine as well - just try to think of ways to reduce the size of the data as much as possible before having to fall back to using R's engine. If need be, you can even export the data back onto the Arrow or DuckDB engine after it's been pulled into R, but that's beyond the scope of this guide. 
+
+The main point of surprise, confusions, and frustration with these engines is usually their *lazy evaluation* vs. R's default *eager evaluation*, which leads to their objects and outputs by default being connections or pointers to a not-yet-needed-and-therefore-non-existing table of data, where R would have executed the computations and generated a table that you could see with your own eyes.
+
+A practical way to understand the *lazy evaluation* used by both `arrow` and `duckplyr`, is to think of it like grocery shopping. R's default *eager evaluation* goes shopping as soon as you think of some ingredient (execute a command in R) that you will need for cooking in the coming days, whereas *lazy evaluation* writes the thoughts down in a shopping list (a SQL query), but doesn't go shopping until you actually start cooking, and only buys the ingredients needed for the dish you've started to cook. This way, it only buys the ingredients (reads the data) you actually need, not what you *thought* or *planned* to use, so it doesn't have to carry as much, and nothing goes to waste. Furthermore, since the ingredients stay in the store as long as possible, it doesn't fill up your refrigerator (memory) with unnecessary items (data). This is why *lazy evaluation* is sometimes called *just-in-time evaluation*.
+
+In both `arrow` and `duckplyr`, you can use `dplyr::collect()` to signal their engine to start executing the commands (you start cooking), but other commands can also force them to execute any "shopping list" of commands previously executed on their objects in R.
+
+While ´arrow` supports a lot of operations from R, it will sometimes throw an error when encountering a few operators. On the contrary, `duckplyr` supports nearly all `dplyr` commands, and when `duckplyr` encounters an R command it cannot translate to something the DuckDB engine can execute, it will - in most cases - automatically pull the data into R and "fall back" to executing them in R's engine.
+
+For this reason, it's usually worth using DuckDB through `duckplyr` rather than Arrow through ´arrow`, but both are blazing fast and can get you through the most heavy parts of your data processing.
+      
+There is good official documentation to get started using `arrow` ([data wrangling](https://arrow.apache.org/docs/r/articles/data_wrangling.html) and [support/limitations](https://arrow.apache.org/docs/r/reference/acero.html)) and `duckplyr`([supported functions](https://duckplyr.tidyverse.org/articles/limits.html), and [unsupported dplyr functions](https://duckplyr.tidyverse.org/reference/unsupported.html))
+
+### Arrow/`arrow` and DuckDB/`duckplyr` in practice
+
+Both packages work by "hi-jacking" `dplyr` functions called on `arrow` or `duckplyr` table objects and translating them to their engines. So, once you've loaded your data as such an object, you simply write the same `dplyr` code you're used to writing (and if you use `dplyr` commands on a "normal" R object, e.g. a `tibble`, this is handled by `dplyr` as if `arrow` and `duckplyr` didn't exist).
+
+Both packages use `dplyr::collect()` to force execution of commands in their engines and pull the results into R, and `dplyr::compute()` to connect data from another source to their engine (e.g. move/convert a `tibble` in R to an Arrow or DuckDB table). `arrow` and `duckplyr` support each other very well, and you can efficiently convert an Arrow Table/dataset into a DuckDB database (and vice versa). The examples below will make use of this when loading in the data - which is stored in Parquet files as a dataset of Arrow Tables - and convert the Arrow connection to a DuckDB connection.
+
+A final note on joining tables before proceeding: To execute joins on their engines, both packages require both of the join's incoming tables to formatted as either two Arrow or DuckDB tables. Furthermore, the tables must have the same connection source, but this is beyond the scope of this guide (for now at least) 
+
+## Setup
+
+First, we need to generate the synthetic data to mimic the DST environment and run the examples on
+
+```{r setup}
+knitr::opts_chunk$set(message = FALSE)
+# Load necessary packages:
+library(dplyr)
+library(purrr)
+library(tibble)
+library(lubridate)
+library(here)
+library(arrow)
+library(duckplyr)
+library(fs)
+
+# Source (run) the script the import the generaing functions:
+source(here::here("R", "generate_data.R"))
+
+# Save to disk as .parquet
+fs::dir_create(here::here("data-parquet", "bef"))
+arrow::write_parquet(generate_bef(), here::here("data-parquet", "bef", "bef.parquet"))
+```
 
 ## BEF
 
@@ -11,22 +87,21 @@ Tasks:
 
 1.  Load in bef.
     1.  Normally, this will be from disk: either single-year files or a combined dataset containing data of all years.
-    2.  Here we load from the synthetic dataset, which mimics the latter.
-2.  Filter to relevant years and/or individuals needed for the planned analysis.
+    2.  Here, we mimic having the raw data converted to Parquet format with files from each register stored in separate folders. So first, we generate the synthetic data, save it to disk as `.parquet` and then load it from disk.
+2.  Filter the data to what is needed for your planned analyses.
     1.  This is a good way to reduce the size of the data you're working with, which will speed processing times up and make your sessions more stable.
-    2.  Depending on the analysis, you can limit your dataset to the range of years and/or age used in your analyses.
-    3.  The list of pnr-numbers that you identify in this step can be used to filter all the other data sources. If your analyses are restricted to a population of individuals with a certain disease, e.g. diabetes or cardiovascular disease, it may be useful to define these variables earlier, and combine them with bef to allow you to filter the data to this study population from the start.
+    2.  For example, you can filter your data to the range of years and/or ages used in your analyses.
+    3.  The list of pnr-numbers that you identify in this step can be used to filter all the other data sources. If your analyses are restricted to a population of individuals with a certain disease, e.g. diabetes or cardiovascular disease, it may be useful to define these variables early in your workflow, and combine them with bef to allow you to filter the data to this study population from the start.
 3.  Convert raw codes to usable values.
-
 
 ### 1: Load
 
+
+
 ```{r}
-load(here::here("synthetic_dst.RData"))
-
-bef <- synthetic_dst$bef
+bef_folder <- here::here("data-parquet", "bef")
+bef <- bef_folder |> arrow::open_dataset(unify_schemas = TRUE) |> arrow::to_duckdb() |> dplyr::compute()
 ```
-
 
 ### 2: Filter
 
@@ -40,6 +115,5 @@ bef_filtered <-
 # Keep the list of pnr's for later filtering:
 filtered_pnrs <- bef_filtered$PNR
 ```
-
 
 ### 3: Convert

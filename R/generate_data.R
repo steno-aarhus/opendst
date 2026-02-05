@@ -17,7 +17,10 @@
 #' )
 generate_bef <- function(years_generated = 2015:2024,
                          rows_per_year = 1000,
-                         turnover_per_year = 20) {
+                         turnover_per_year = 20,
+                         seed = 2109) {
+  set.seed(seed = seed)
+
   #  SETUP POPULATION SIZE
 
   # Calculate total size of the unique population pool based on inputs
@@ -65,7 +68,7 @@ generate_bef <- function(years_generated = 2015:2024,
   opr_land_vector <- sample(c(opr_country_codes, rep(5100, n_danish)))
 
   # Generate the stable "Background" Tibble
-  background_pop <- tibble(
+  background_pop <- tibble::tibble(
     # Stable ID
     PNR = replicate(total_background_rows, paste0(sample(0:9, 12, replace = TRUE), collapse = "")),
 
@@ -94,7 +97,7 @@ generate_bef <- function(years_generated = 2015:2024,
     population_pool |>
       sample_n(rows_per_year, replace = FALSE) |>
       # Add time-varying Variables (Generated at random each year)
-      mutate(
+      dplyr::mutate(
         REG = sample(
           c(81, 82, 83, 84, 85),
           n(),
@@ -105,19 +108,19 @@ generate_bef <- function(years_generated = 2015:2024,
         year = year_char,
 
         # Calculate ALDER relative to the current year
-        ALDER = floor(time_length(
-          interval(FOED_DAG, as.Date(paste0(year_char, "-12-31"))),
+        ALDER = floor(lubridate::time_length(
+          lubridate::interval(FOED_DAG, as.Date(paste0(year_char, "-12-31"))),
           unit = "years"
         ))
       ) |>
       # Reorder columns
-      select(PNR, KOEN, FOED_DAG, ALDER, REG, CIVST, OPR_LAND, year)
+      dplyr::select(PNR, KOEN, FOED_DAG, ALDER, REG, CIVST, OPR_LAND, year)
   }
 
   # EXECUTE MAP & RETURN
 
-  result <- map(years_generated, \(y) generate_year_sample(y, background_pop)) |>
-    list_rbind()
+  result <- purrr::map(years_generated, \(yr) generate_year_sample(yr, background_pop)) |>
+    purrr::list_rbind()
 
   return(result)
 }
